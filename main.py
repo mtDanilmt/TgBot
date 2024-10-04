@@ -20,6 +20,8 @@ RM_HOST = os.getenv('RM_HOST')
 RM_PORT = int(os.getenv('RM_PORT'))
 RM_USER = os.getenv('RM_USER')
 RM_PASSWORD = os.getenv('RM_PASSWORD')
+db_name = os.getenv('DB_DATABASE')
+rm_password = os.getenv('RM_PASSWORD')
 
 email_pattern = r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+'
 phone_pattern = r'(?:\+7|8)[\s-]?\(?\d{3}\)?[\s-]?\d{3}[\s-]?\d{2}[\s-]?\d{2}'
@@ -30,11 +32,14 @@ def log_user_action(user_id, command, status):
     logger.info(f"Пользователь {user_id} использует команду {command}. Статус: {status}")
 
 
-def run_ssh_command(command):
+def run_ssh_command(command, use_sudo=False):
     try:
         ssh = paramiko.SSHClient()
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         ssh.connect(RM_HOST, port=RM_PORT, username=RM_USER, password=RM_PASSWORD)
+
+        if use_sudo:
+            command = f"echo {RM_PASSWORD} | sudo -S {command}"
 
         stdin, stdout, stderr = ssh.exec_command(command)
         output = stdout.read().decode('utf-8')
@@ -66,6 +71,8 @@ async def find_phone_number(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Отправь мне текст, в котором нужно найти номера телефонов.")
     context.user_data['search_mode'] = 'phone'
     log_user_action(user_id, "/find_phone_number", "запущена")
+
+
 
 
 async def verify_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -206,6 +213,61 @@ async def get_services(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     os.remove(file_path)
 
+
+async def get_postgresql_logs(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    log_command = "tail -n 20 /var/log/postgresql/postgresql-15-main.log"
+    result = run_ssh_command(log_command, use_sudo=True)
+
+    await update.message.reply_text(f"Последние 20 строк логов PostgreSQL:\n{result}")
+    log_user_action(user_id, "Получение логов PostgreSQL", "выполнено")
+
+
+def run_sql_command(sql_query):
+    db_name = os.getenv('DB_DATABASE')
+    rm_password = os.getenv('RM_PASSWORD')  # Получаем пароль RM_PASSWORD из .env
+    command = f"echo {rm_password} | sudo -S -u postgres psql -d {db_name} -c \"{sql_query}\""
+
+    return run_ssh_command(command, use_sudo=False)
+
+
+
+
+async def get_emails(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    sql_query = "SELECT email FROM email_address"
+
+    result = run_sql_command(sql_query)
+
+    if result:
+        await update.message.reply_text(f"Email-адреса:\n{result}")
+        log_user_action(user_id, "Получение email-адресов", "успешно")
+    else:
+        await update.message.reply_text("Не удалось получить email-адреса.")
+        log_user_action(user_id, "Получение email-адресов", "ошибка")
+
+
+
+
+
+async def get_phone_numbers(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    sql_query = "SELECT phone FROM phone_number"
+
+    result = run_sql_command(sql_query)
+
+    if result:
+        await update.message.reply_text(f"Номера телефонов:\n{result}")
+        log_user_action(user_id, "Получение номеров телефонов", "успешно")
+    else:
+        await update.message.reply_text("Не удалось получить номера телефонов.")
+        log_user_action(user_id, "Получение номеров телефонов", "ошибка")
+
+
+
+
+
+
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
@@ -225,6 +287,9 @@ def main():
     app.add_handler(CommandHandler("get_ss", get_ss))
     app.add_handler(CommandHandler("get_apt_list", get_apt_list))
     app.add_handler(CommandHandler("get_services", get_services))
+    app.add_handler(CommandHandler("get_postgresql_logs", get_postgresql_logs))
+    app.add_handler(CommandHandler("get_emails", get_emails))
+    app.add_handler(CommandHandler("get_phone_numbers", get_phone_numbers))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
     app.run_polling()
