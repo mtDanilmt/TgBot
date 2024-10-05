@@ -55,7 +55,16 @@ def run_ssh_command(command, use_sudo=False):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     await update.message.reply_text(
-        "Привет! Я бот для поиска email и номеров телефонов, проверки сложности паролей и мониторинга системы. Введи /find_email, /find_phone_number, /verify_password или любую команду мониторинга, чтобы начать.")
+        "Привет! Я бот для поиска email и номеров телефонов, проверки сложности паролей и много другого. "
+        "Введите одну из команд: "
+        "/find_email, /find_phone_number,  /verify_password" "\n"
+        "/get_repl_logs, /get_emails, /get_phone_numbers" "\n"
+        "/get_release, /get_uname, /get_uptime" "\n"
+        "/get_df, /get_free, /get_mpstat" "\n"
+        "/get_w, /get_auths, /get_critical" "\n"
+        "/get_ps, /get_ss, /get_apt_list" "\n"
+        "/get_services"
+    )
     log_user_action(user_id, "/start", "выполнена")
 
 
@@ -63,16 +72,14 @@ async def find_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     await update.message.reply_text("Отправь мне текст, в котором нужно найти email-адреса.")
     context.user_data['search_mode'] = 'email'
-    log_user_action(user_id, "/find_email", "запущена")
+    logger.info(f"Пользователь {user_id} выбрал поиск email")
 
 
 async def find_phone_number(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     await update.message.reply_text("Отправь мне текст, в котором нужно найти номера телефонов.")
     context.user_data['search_mode'] = 'phone'
-    log_user_action(user_id, "/find_phone_number", "запущена")
-
-
+    logger.info(f"Пользователь {user_id} выбрал поиск номеров телефонов")
 
 
 async def verify_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -87,35 +94,135 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     search_mode = context.user_data.get('search_mode')
 
-    if search_mode == 'email':
-        emails = re.findall(email_pattern, text)
-        if emails:
-            await update.message.reply_text(f"Найдены email-адреса: {', '.join(emails)}")
-            log_user_action(user_id, "Поиск email", "успешно")
+    if not context.user_data.get('pending_confirmation'):
+        if search_mode == 'email':
+            emails = re.findall(email_pattern, text)
+            if emails:
+                context.user_data['emails'] = emails
+                await update.message.reply_text(
+                    f"Найдены email-адреса: {', '.join(emails)}\nЗаписать их в базу данных? (да/нет)")
+                context.user_data['pending_confirmation'] = 'email'
+                logger.info(f"Пользователь {user_id} нашел email: {', '.join(emails)}")
+            else:
+                await update.message.reply_text("Email-адреса не найдены.")
+                logger.info(f"Пользователь {user_id} не нашел email")
+
+        elif search_mode == 'phone':
+            phones = re.findall(phone_pattern, text)
+            if phones:
+                context.user_data['phones'] = phones
+                await update.message.reply_text(
+                    f"Найдены номера телефонов: {', '.join(phones)}\nЗаписать их в базу данных? (да/нет)")
+                context.user_data['pending_confirmation'] = 'phone'
+                logger.info(f"Пользователь {user_id} нашел номера телефонов: {', '.join(phones)}")
+            else:
+                await update.message.reply_text("Номера телефонов не найдены.")
+                logger.info(f"Пользователь {user_id} не нашел номера телефонов")
+
+        elif search_mode == 'password':
+            if re.match(password_pattern, text):
+                await update.message.reply_text("Пароль сложный.")
+                logger.info(f"Пользователь {user_id} ввел сложный пароль")
+            else:
+                await update.message.reply_text("Пароль простой.")
+                logger.info(f"Пользователь {user_id} ввел простой пароль")
+
         else:
-            await update.message.reply_text("Email-адреса не найдены.")
-            log_user_action(user_id, "Поиск email", "не найдены")
-    elif search_mode == 'phone':
-        phones = re.findall(phone_pattern, text)
-        phones = [phone for phone in phones if phone.strip()]
-        if phones:
-            formatted_phones = ', '.join(phones)
-            await update.message.reply_text(f"Найдены номера телефонов: {formatted_phones}")
-            log_user_action(user_id, "Поиск номеров", "успешно")
-        else:
-            await update.message.reply_text("Номера телефонов не найдены.")
-            log_user_action(user_id, "Поиск номеров", "не найдены")
-    elif search_mode == 'password':
-        if re.match(password_pattern, text):
-            await update.message.reply_text("Пароль сложный.")
-            log_user_action(user_id, "Проверка пароля", "сложный")
-        else:
-            await update.message.reply_text("Пароль простой.")
-            log_user_action(user_id, "Проверка пароля", "простой")
+            await update.message.reply_text(
+                "Выбери одну из следующих команд: "
+                "/find_email, /find_phone_number,  /verify_password" "\n"
+                "/get_repl_logs, /get_emails, /get_phone_numbers" "\n"
+                "/get_release, /get_uname, /get_uptime" "\n"
+                "/get_df, /get_free, /get_mpstat" "\n"
+                "/get_w, /get_auths, /get_critical" "\n"
+                "/get_ps, /get_ss, /get_apt_list" "\n"
+                "/get_services")
+            logger.info(f"Пользователь {user_id} не выбрал команду")
+
     else:
-        await update.message.reply_text(
-            "Выбери команду /find_email, /find_phone_number или /verify_password для начала поиска.")
-        log_user_action(user_id, "Ошибка", "не выбрана команда")
+        confirmation = text.lower()
+
+        if confirmation == 'да':
+            pending_action = context.user_data.get('pending_confirmation')
+
+            if pending_action == 'email':
+                emails = context.user_data.get('emails', [])
+                if emails:
+                    await save_emails_to_db(emails, update)
+                else:
+                    await update.message.reply_text("Не удалось найти email-адреса для записи.")
+            elif pending_action == 'phone':
+                phones = context.user_data.get('phones', [])
+                if phones:
+                    await save_phones_to_db(phones, update)
+                else:
+                    await update.message.reply_text("Не удалось найти номера телефонов для записи.")
+
+            context.user_data['pending_confirmation'] = None
+            context.user_data.pop('emails', None)
+            context.user_data.pop('phones', None)
+
+            await update.message.reply_text(
+                "Данные записаны. Выберите одну из следующих команд: "
+                "/find_email, /find_phone_number,  /verify_password" "\n"
+                "/get_repl_logs, /get_emails, /get_phone_numbers" "\n"
+                "/get_release, /get_uname, /get_uptime" "\n"
+                "/get_df, /get_free, /get_mpstat" "\n"
+                "/get_w, /get_auths, /get_critical" "\n"
+                "/get_ps, /get_ss, /get_apt_list" "\n"
+                "/get_services"
+            )
+
+        elif confirmation == 'нет':
+            await update.message.reply_text("Запись отменена.")
+            logger.info(f"Пользователь {user_id} отменил запись данных")
+            context.user_data['pending_confirmation'] = None
+            context.user_data.pop('emails', None)
+            context.user_data.pop('phones', None)
+
+            await update.message.reply_text(
+                "Запись отменена. Выберите одну из следующих команд: "
+                "/find_email, /find_phone_number,  /verify_password" "\n"
+                "/get_repl_logs, /get_emails, /get_phone_numbers" "\n"
+                "/get_release, /get_uname, /get_uptime" "\n"
+                "/get_df, /get_free, /get_mpstat" "\n"
+                "/get_w, /get_auths, /get_critical" "\n"
+                "/get_ps, /get_ss, /get_apt_list" "\n"
+                "/get_services"
+            )
+
+        else:
+            await update.message.reply_text("Пожалуйста, ответьте 'да' или 'нет'.")
+
+
+async def save_emails_to_db(emails, update):
+    success = True
+    for email in emails:
+        sql_query = f"INSERT INTO email_address(email) VALUES ('{email}');"
+        result = run_sql_command(sql_query)
+        if 'ERROR' in result:
+            success = False
+            await update.message.reply_text(f"Ошибка при записи email {email}: {result}")
+
+    if success:
+        await update.message.reply_text("Все email-адреса успешно записаны в базу данных.")
+    else:
+        await update.message.reply_text("Некоторые email-адреса не были записаны из-за ошибок.")
+
+
+async def save_phones_to_db(phones, update):
+    success = True
+    for phone in phones:
+        sql_query = f"INSERT INTO phone_number(phone) VALUES ('{phone}');"
+        result = run_sql_command(sql_query)
+        if 'ERROR' in result:
+            success = False
+            await update.message.reply_text(f"Ошибка при записи номера телефона {phone}: {result}")
+
+    if success:
+        await update.message.reply_text("Все номера телефонов успешно записаны в базу данных.")
+    else:
+        await update.message.reply_text("Некоторые номера телефонов не были записаны из-за ошибок.")
 
 
 async def get_release(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -214,7 +321,7 @@ async def get_services(update: Update, context: ContextTypes.DEFAULT_TYPE):
     os.remove(file_path)
 
 
-async def get_postgresql_logs(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def get_repl_logs(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     log_command = "tail -n 20 /var/log/postgresql/postgresql-15-main.log"
     result = run_ssh_command(log_command, use_sudo=True)
@@ -225,12 +332,10 @@ async def get_postgresql_logs(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 def run_sql_command(sql_query):
     db_name = os.getenv('DB_DATABASE')
-    rm_password = os.getenv('RM_PASSWORD')  # Получаем пароль RM_PASSWORD из .env
+    rm_password = os.getenv('RM_PASSWORD')
     command = f"echo {rm_password} | sudo -S -u postgres psql -d {db_name} -c \"{sql_query}\""
 
     return run_ssh_command(command, use_sudo=False)
-
-
 
 
 async def get_emails(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -247,9 +352,6 @@ async def get_emails(update: Update, context: ContextTypes.DEFAULT_TYPE):
         log_user_action(user_id, "Получение email-адресов", "ошибка")
 
 
-
-
-
 async def get_phone_numbers(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     sql_query = "SELECT phone FROM phone_number"
@@ -262,10 +364,6 @@ async def get_phone_numbers(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("Не удалось получить номера телефонов.")
         log_user_action(user_id, "Получение номеров телефонов", "ошибка")
-
-
-
-
 
 
 def main():
@@ -287,7 +385,7 @@ def main():
     app.add_handler(CommandHandler("get_ss", get_ss))
     app.add_handler(CommandHandler("get_apt_list", get_apt_list))
     app.add_handler(CommandHandler("get_services", get_services))
-    app.add_handler(CommandHandler("get_postgresql_logs", get_postgresql_logs))
+    app.add_handler(CommandHandler("get_repl_logs", get_repl_logs))
     app.add_handler(CommandHandler("get_emails", get_emails))
     app.add_handler(CommandHandler("get_phone_numbers", get_phone_numbers))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
