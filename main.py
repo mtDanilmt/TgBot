@@ -1,10 +1,12 @@
-import logging
+import logging, subprocess
 import os
 import paramiko
 from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram.ext import CallbackContext
 import re
+import psycopg2
 
 load_dotenv()
 
@@ -22,6 +24,10 @@ RM_USER = os.getenv('RM_USER')
 RM_PASSWORD = os.getenv('RM_PASSWORD')
 db_name = os.getenv('DB_DATABASE')
 rm_password = os.getenv('RM_PASSWORD')
+DB_HOST = os.getenv('DB_HOST')
+DB_USER = os.getenv('DB_USER')
+DB_PASSWORD = os.getenv('DB_PASSWORD')
+DB_PORT = os.getenv('DB_PORT')
 
 email_pattern = r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+'
 phone_pattern = r'(?:\+7|8)[\s-]?\(?\d{3}\)?[\s-]?\d{3}[\s-]?\d{2}[\s-]?\d{2}'
@@ -50,6 +56,29 @@ def run_ssh_command(command, use_sudo=False):
     except Exception as e:
         logger.error(f"Ошибка SSH подключения: {e}")
         return f"Ошибка подключения к серверу: {e}"
+
+
+def run_ssh_command_db(command, use_sudo=False):
+    try:
+        ssh = paramiko.SSHClient()
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        ssh.connect(DB_HOST, port=DB_PORT, username=DB_USER, password=DB_PASSWORD)
+
+        if use_sudo:
+            command = f"echo {RM_PASSWORD} | sudo -S {command}"
+
+        stdin, stdout, stderr = ssh.exec_command(command)
+        output = stdout.read().decode('utf-8')
+        ssh.close()
+
+        return output.strip() if output else stderr.read().decode('utf-8').strip()
+
+    except Exception as e:
+        logger.error(f"Ошибка SSH подключения: {e}")
+        return f"Ошибка подключения к серверу: {e}"
+
+
+
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -321,21 +350,62 @@ async def get_services(update: Update, context: ContextTypes.DEFAULT_TYPE):
     os.remove(file_path)
 
 
-async def get_repl_logs(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    log_command = "tail -n 20 /var/log/postgresql/postgresql-15-main.log"
-    result = run_ssh_command(log_command, use_sudo=True)
+async def get_repl_logs(update: Update, context: CallbackContext) -> None:
+    try:
+        # Выполнение команды для получения логов
+        result = subprocess.run(
+            ["tail", "-n", "30", "/var/log/postgresql/postgresql.log"],
+            capture_output=True,
+            text=True
+        )
+        logs = result.stdout
+        if logs:
+            await update.message.reply_text(f"Последние репликационные логи:\n{logs}")
+        else:
+            await update.message.reply_text("Репликационные логи не найдены.")
+    except Exception as e:
+        await update.message.reply_text(f"Ошибка при получении логов: {str(e)}")
 
-    await update.message.reply_text(f"Последние 20 строк логов PostgreSQL:\n{result}")
-    log_user_action(user_id, "Получение логов PostgreSQL", "выполнено")
 
 
 def run_sql_command(sql_query):
     db_name = os.getenv('DB_DATABASE')
-    rm_password = os.getenv('RM_PASSWORD')
-    command = f"echo {rm_password} | sudo -S -u postgres psql -d {db_name} -c \"{sql_query}\""
+    db_user = os.getenv('DB_USER')
+    db_password = os.getenv('DB_PASSWORD')
+    db_host = os.getenv('DB_HOST')
+    db_port = os.getenv('DB_PORT')
 
-    return run_ssh_command(command, use_sudo=False)
+    try:
+        # Устанавливаем соединение с базой данных
+        conn = psycopg2.connect(
+            dbname=db_name,
+            user=db_user,
+            password=db_password,
+            host=db_host,
+            port=db_port
+        )
+        cursor = conn.cursor()
+        
+        # Выполнение SQL-запроса
+        cursor.execute(sql_query)
+        
+        # Если запрос предполагает получение данных (SELECT)
+        if sql_query.strip().lower().startswith("select"):
+            result = cursor.fetchall()
+            conn.close()
+            return result
+        
+        # Если запрос выполняет действие (INSERT, UPDATE, DELETE и т.д.)
+        conn.commit()
+        conn.close()
+        return "Команда успешно выполнена"
+
+    except Exception as e:
+        # Логирование ошибки
+        logger.error(f"Ошибка выполнения SQL: {e}")
+        return f"Ошибка выполнения SQL: {e}"
+
+
 
 
 async def get_emails(update: Update, context: ContextTypes.DEFAULT_TYPE):
