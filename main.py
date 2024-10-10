@@ -360,7 +360,7 @@ async def get_repl_logs(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 
-async def run_sql_command(sql_query):
+def run_sql_command(sql_query):
     db_name = os.getenv('DB_DATABASE')
     db_user = os.getenv('DB_USER')
     db_password = os.getenv('DB_PASSWORD')
