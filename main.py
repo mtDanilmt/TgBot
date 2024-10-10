@@ -350,30 +350,22 @@ async def get_services(update: Update, context: ContextTypes.DEFAULT_TYPE):
     os.remove(file_path)
 
 
-async def get_repl_logs(update: Update, context: CallbackContext) -> None:
-    try:
-        # Выполнение команды для получения логов
-        result = subprocess.run(
-            ["tail", "-n", "30", "/var/log/postgresql/postgresql.log"],
-            capture_output=True,
-            text=True
-        )
-        logs = result.stdout
-        if logs:
-            await update.message.reply_text(f"Последние репликационные логи:\n{logs}")
-        else:
-            await update.message.reply_text("Репликационные логи не найдены.")
-    except Exception as e:
-        await update.message.reply_text(f"Ошибка при получении логов: {str(e)}")
+async def get_repl_logs(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    log_command = "tail -n 20 /var/log/postgresql/postgresql.log"
+    result = run_ssh_command_db(log_command, use_sudo=True)
+
+    await update.message.reply_text(f"Последние 20 строк логов PostgreSQL:\n{result}")
+    log_user_action(user_id, "Получение логов PostgreSQL", "выполнено")
 
 
 
-    def run_sql_command(sql_query):
-        db_name = os.getenv('DB_DATABASE')
-        rm_password = os.getenv('DB_PASSWORD')
-        command = f"echo {rm_password} | sudo -S -u postgres psql -d {db_name} -c \"{sql_query}\""
+def run_sql_command(sql_query):
+    db_name = os.getenv('DB_DATABASE')
+    rm_password = os.getenv('DB_PASSWORD')
+    command = f"echo {rm_password} | sudo -S -u postgres psql -d {db_name} -c \"{sql_query}\""
 
-        return run_ssh_command_db(command, use_sudo=False)
+    return run_ssh_command_db(command, use_sudo=False)
 
 
 
