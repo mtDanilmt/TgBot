@@ -368,42 +368,12 @@ async def get_repl_logs(update: Update, context: CallbackContext) -> None:
 
 
 
-def run_sql_command(sql_query):
-    db_name = os.getenv('DB_DATABASE')
-    db_user = os.getenv('DB_USER')
-    db_password = os.getenv('DB_PASSWORD')
-    db_host = os.getenv('DB_HOST')
-    db_port = os.getenv('DB_PORT')
+    def run_sql_command(sql_query):
+        db_name = os.getenv('DB_DATABASE')
+        rm_password = os.getenv('DB_PASSWORD')
+        command = f"echo {rm_password} | sudo -S -u postgres psql -d {db_name} -c \"{sql_query}\""
 
-    try:
-        # Устанавливаем соединение с базой данных
-        conn = psycopg2.connect(
-            dbname=db_name,
-            user=db_user,
-            password=db_password,
-            host=db_host,
-            port=db_port
-        )
-        cursor = conn.cursor()
-        
-        # Выполнение SQL-запроса
-        cursor.execute(sql_query)
-        
-        # Если запрос предполагает получение данных (SELECT)
-        if sql_query.strip().lower().startswith("select"):
-            result = cursor.fetchall()
-            conn.close()
-            return result
-        
-        # Если запрос выполняет действие (INSERT, UPDATE, DELETE и т.д.)
-        conn.commit()
-        conn.close()
-        return "Команда успешно выполнена"
-
-    except Exception as e:
-        # Логирование ошибки
-        logger.error(f"Ошибка выполнения SQL: {e}")
-        return f"Ошибка выполнения SQL: {e}"
+        return run_ssh_command_db(command, use_sudo=False)
 
 
 
