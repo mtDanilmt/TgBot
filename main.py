@@ -62,7 +62,7 @@ def run_ssh_command_db(command, use_sudo=False):
     try:
         ssh = paramiko.SSHClient()
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        ssh.connect(DB_HOST, port=DB_PORT, username=DB_USER, password=DB_PASSWORD)
+        ssh.connect(DB_HOST, port=RM_PORT, username=DB_USER, password=DB_PASSWORD)
 
         if use_sudo:
             command = f"echo {RM_PASSWORD} | sudo -S {command}"
