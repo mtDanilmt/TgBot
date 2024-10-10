@@ -353,7 +353,7 @@ async def get_services(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def get_repl_logs(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     log_command = "tail -n 20 /var/log/postgresql/postgresql.log"
-    result = run_ssh_command_db(log_command, use_sudo=True)
+    result = run_ssh_command(log_command, use_sudo=True)
 
     await update.message.reply_text(f"Последние 20 строк логов PostgreSQL:\n{result}")
     log_user_action(user_id, "Получение логов PostgreSQL", "выполнено")
